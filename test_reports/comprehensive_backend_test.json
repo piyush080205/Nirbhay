@@ -1,0 +1,333 @@
+{
+  "summary": "Comprehensive backend API testing completed for Nirbhay Safety App",
+  "test_details": {
+    "total_tests": 37,
+    "passed": 31,
+    "failed": 6,
+    "success_rate": 83.8,
+    "critical_failures": 0,
+    "trip_id_used": "500a16c7-24d0-4804-8c96-016285b5a5c7"
+  },
+  "backend_issues": {
+    "critical_bugs": [
+      {
+        "endpoint": "Location Tracking",
+        "issue": "Add GPS location failed: 400 - {\"detail\":\"Trip is not active\"}",
+        "impact": "Critical functionality not working",
+        "fix_priority": "CRITICAL"
+      },
+      {
+        "endpoint": "Motion Detection",
+        "issue": "Normal motion failed: 400 - {\"detail\":\"Trip is not active\"}",
+        "impact": "Critical functionality not working",
+        "fix_priority": "CRITICAL"
+      },
+      {
+        "endpoint": "Motion Detection",
+        "issue": "Panic motion failed: 400 - {\"detail\":\"Trip is not active\"}",
+        "impact": "Critical functionality not working",
+        "fix_priority": "CRITICAL"
+      }
+    ]
+  },
+  "test_results": [
+    {
+      "test": "Health Check - Response Structure",
+      "passed": true,
+      "details": "All required fields present: ['status', 'timestamp', 'services']",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:56.911923",
+      "is_critical": false
+    },
+    {
+      "test": "Health Check - Status",
+      "passed": true,
+      "details": "Service reports healthy status",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:56.911954",
+      "is_critical": false
+    },
+    {
+      "test": "Health Check - database service",
+      "passed": true,
+      "details": "database: connected",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:56.911961",
+      "is_critical": false
+    },
+    {
+      "test": "Health Check - unwired_labs service",
+      "passed": true,
+      "details": "unwired_labs: configured",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:56.911966",
+      "is_critical": false
+    },
+    {
+      "test": "Health Check - fast2sms service",
+      "passed": true,
+      "details": "fast2sms: demo_mode",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:56.911971",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - Create Trip",
+      "passed": true,
+      "details": "Trip created with valid ID: 500a16c7-24d0-4804-8c96-016285b5a5c7, Status: active",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:57.447715",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - Initial Status",
+      "passed": true,
+      "details": "Trip status correctly set to 'active'",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:57.447751",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - Guardian Phone",
+      "passed": true,
+      "details": "Guardian phone correctly set: +919876543210",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:57.447759",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - Get Trip",
+      "passed": true,
+      "details": "Trip retrieved successfully: 500a16c7-24d0-4804-8c96-016285b5a5c7",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:57.817111",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - Data Consistency",
+      "passed": true,
+      "details": "Retrieved trip matches created trip",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:57.817139",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - End Trip",
+      "passed": true,
+      "details": "Trip ended successfully: Trip ended",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:58.189187",
+      "is_critical": false
+    },
+    {
+      "test": "Trip Lifecycle - End Status Update",
+      "passed": true,
+      "details": "Trip status correctly updated to 'ended'",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:58.545723",
+      "is_critical": false
+    },
+    {
+      "test": "Location Tracking - Add GPS Location",
+      "passed": false,
+      "details": "",
+      "error": "Add GPS location failed: 400 - {\"detail\":\"Trip is not active\"}",
+      "timestamp": "2026-02-27T21:56:58.978029",
+      "is_critical": true
+    },
+    {
+      "test": "Location Tracking - Cellular Triangulation",
+      "passed": true,
+      "details": "Cellular location: no_match",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:59.538590",
+      "is_critical": false
+    },
+    {
+      "test": "Location Tracking - Invalid Data Handling",
+      "passed": true,
+      "details": "Invalid location properly rejected: 400",
+      "error": "",
+      "timestamp": "2026-02-27T21:56:59.912766",
+      "is_critical": false
+    },
+    {
+      "test": "Motion Detection - Normal Motion",
+      "passed": false,
+      "details": "",
+      "error": "Normal motion failed: 400 - {\"detail\":\"Trip is not active\"}",
+      "timestamp": "2026-02-27T21:57:00.321461",
+      "is_critical": true
+    },
+    {
+      "test": "Motion Detection - Panic Motion",
+      "passed": false,
+      "details": "",
+      "error": "Panic motion failed: 400 - {\"detail\":\"Trip is not active\"}",
+      "timestamp": "2026-02-27T21:57:00.679750",
+      "is_critical": true
+    },
+    {
+      "test": "Motion Detection - Data Persistence",
+      "passed": false,
+      "details": "",
+      "error": "Motion events not persisted in MongoDB",
+      "timestamp": "2026-02-27T21:57:01.053109",
+      "is_critical": false
+    },
+    {
+      "test": "Motion Detection - Invalid Data Handling",
+      "passed": true,
+      "details": "Invalid motion data properly rejected: 400",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:01.413447",
+      "is_critical": false
+    },
+    {
+      "test": "Risk Evaluation - Manual Evaluation",
+      "passed": true,
+      "details": "Risk evaluation completed: False",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:01.885764",
+      "is_critical": false
+    },
+    {
+      "test": "Risk Evaluation - No Risk Response",
+      "passed": true,
+      "details": "No risk detected (expected with limited test data)",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:01.885792",
+      "is_critical": false
+    },
+    {
+      "test": "Risk Evaluation - Automatic Risk Detection",
+      "passed": false,
+      "details": "",
+      "error": "No risk events generated despite panic motion (thresholds may be too high)",
+      "timestamp": "2026-02-27T21:57:07.781948",
+      "is_critical": false
+    },
+    {
+      "test": "Risk Evaluation - Debug Endpoint",
+      "passed": true,
+      "details": "Debug info available: normal",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:08.163901",
+      "is_critical": false
+    },
+    {
+      "test": "Guardian Management - Update Guardians",
+      "passed": true,
+      "details": "Guardian update: Guardian updated",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:08.753690",
+      "is_critical": false
+    },
+    {
+      "test": "Guardian Management - Primary Phone Persistence",
+      "passed": true,
+      "details": "Primary guardian phone persisted: +919876543210",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.136215",
+      "is_critical": false
+    },
+    {
+      "test": "Guardian Management - FCM Token Persistence",
+      "passed": true,
+      "details": "FCM token persisted correctly",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.136247",
+      "is_critical": false
+    },
+    {
+      "test": "Guardian Management - Invalid Data Handling",
+      "passed": true,
+      "details": "Invalid guardian data handled: 200",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.507898",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - Test Alert",
+      "passed": true,
+      "details": "Test alert: Test alert sent",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.910555",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - SMS Status",
+      "passed": true,
+      "details": "SMS alert status: True (demo mode expected)",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.910583",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - Demo Mode SMS",
+      "passed": true,
+      "details": "SMS alert simulated successfully (Fast2SMS demo mode)",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.910589",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - Push Notification",
+      "passed": true,
+      "details": "Push notification status: True",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.910594",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - Guardian Info",
+      "passed": true,
+      "details": "Guardian phone: invalid_phone_123",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:09.910600",
+      "is_critical": false
+    },
+    {
+      "test": "SMS Alert System - Alert Logging",
+      "passed": false,
+      "details": "",
+      "error": "Test alert not found in trip risk events",
+      "timestamp": "2026-02-27T21:57:11.276950",
+      "is_critical": false
+    },
+    {
+      "test": "Additional Endpoints - Geocoding",
+      "passed": true,
+      "details": "Geocoding successful: 1 results",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:12.051112",
+      "is_critical": false
+    },
+    {
+      "test": "Additional Endpoints - Route Analysis",
+      "passed": true,
+      "details": "Route analysis: moderate safety level",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:19.126450",
+      "is_critical": false
+    },
+    {
+      "test": "Additional Endpoints - Active Trips List",
+      "passed": true,
+      "details": "Active trips endpoint: 1 trips",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:19.494785",
+      "is_critical": false
+    },
+    {
+      "test": "Additional Endpoints - Root API",
+      "passed": true,
+      "details": "Root API: Nirbhay Safety API - Autonomous Women Safety System",
+      "error": "",
+      "timestamp": "2026-02-27T21:57:19.852238",
+      "is_critical": false
+    }
+  ],
+  "timestamp": "2026-02-27T21:57:19.852500",
+  "backend_url": "https://be8cb242-573b-481e-9c4d-490d720ec009.preview.emergentagent.com/api"
+}
