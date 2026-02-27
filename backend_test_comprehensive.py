@@ -33,8 +33,7 @@ def get_backend_url():
                     return line.split('=')[1].strip()
     return "http://localhost:8001"
 
-BASE_URL = get_backend_url()
-API_BASE = f"{BASE_URL}/api"
+API_BASE = get_backend_url()  # Already includes /api
 
 print(f"🧪 Testing Nirbhay Backend at: {API_BASE}")
 
