@@ -1,7 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from supabase_client import supabase
 import os
 import logging
 from pathlib import Path
@@ -17,12 +17,7 @@ import asyncio
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'nirbhay_db')]
-
-# Create the main app
+# Create the main app (single instance)
 app = FastAPI(title="Nirbhay Safety API")
 
 # Create a router with the /api prefix
@@ -437,7 +432,6 @@ async def send_sms_alert(phone: str, message: str, location: Optional[dict] = No
     except Exception as e:
         logger.error(f"Fast2SMS error: {str(e)}")
         return False
-        return False
 
 async def send_push_notification(fcm_token: str, title: str, body: str) -> bool:
     """
@@ -482,8 +476,35 @@ async def trigger_alerts(trip: dict, risk_event: RiskEvent) -> dict:
     return results
 
 # ===========================================
-# API Endpoints
+# API Endpoints (all on api_router)
 # ===========================================
+
+@api_router.post("/validate-invite")
+def validate_invite(code: str):
+    result = supabase.table("invites").select("*").eq("invite_code", code).execute()
+    if len(result.data) == 0:
+        raise HTTPException(status_code=403, detail="Invalid invite")
+    invite = result.data[0]
+    if invite["used"]:
+        raise HTTPException(status_code=403, detail="Invite already used")
+    supabase.table("invites").update({"used": True}).eq("invite_code", code).execute()
+    return {"status": "approved"}
+
+@api_router.post("/sensor")
+def sensor_data(payload: dict):
+    supabase.table("sensor_events").insert({
+        "sensor_data": payload
+    }).execute()
+    return {"status": "logged"}
+
+@api_router.post("/location")
+def location_event(lat: float, lng: float):
+    supabase.table("location_events").insert({
+        "latitude": lat,
+        "longitude": lng
+    }).execute()
+    return {"status": "location stored"}
+
 
 @api_router.get("/")
 async def root():
@@ -517,7 +538,7 @@ async def create_trip(trip_data: TripCreate):
     trip_dict = trip.model_dump()
     trip_dict['start_time'] = trip_dict['start_time'].isoformat()
     
-    await db.trips.insert_one(trip_dict)
+    supabase.table("trips").insert(trip_dict).execute()
     logger.info(f"Trip created: {trip.id}")
     
     return trip
@@ -525,27 +546,25 @@ async def create_trip(trip_data: TripCreate):
 @api_router.get("/trips/{trip_id}")
 async def get_trip(trip_id: str):
     """Get trip details including all location and motion data"""
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
+    result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Trip not found")
-    
-    trip.pop('_id', None)
-    return trip
+    return result.data[0]
 
 @api_router.post("/trips/{trip_id}/end")
 async def end_trip(trip_id: str):
     """
     End an active trip - stops all tracking.
     """
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
+    result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Trip not found")
     
     end_time = datetime.utcnow()
-    await db.trips.update_one(
-        {"id": trip_id},
-        {"$set": {"status": "ended", "end_time": end_time.isoformat()}}
-    )
+    supabase.table("trips").update({
+        "status": "ended",
+        "end_time": end_time.isoformat()
+    }).eq("id", trip_id).execute()
     
     logger.info(f"Trip ended: {trip_id}")
     return {"message": "Trip ended", "trip_id": trip_id, "end_time": end_time.isoformat()}
@@ -553,8 +572,8 @@ async def end_trip(trip_id: str):
 @api_router.put("/trips/{trip_id}/guardian")
 async def update_guardian(trip_id: str, guardian: GuardianUpdate):
     """Update guardian contact information for a trip"""
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
+    result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Trip not found")
     
     update_data = {}
@@ -564,9 +583,25 @@ async def update_guardian(trip_id: str, guardian: GuardianUpdate):
         update_data["guardian_fcm_token"] = guardian.guardian_fcm_token
     
     if update_data:
-        await db.trips.update_one({"id": trip_id}, {"$set": update_data})
+        supabase.table("trips").update(update_data).eq("id", trip_id).execute()
     
     return {"message": "Guardian updated", "trip_id": trip_id}
+
+# ----- Supabase Helper: Append to JSON array column -----
+
+def supabase_get_trip(trip_id: str) -> dict:
+    """Fetch a trip by ID from Supabase, raise 404 if not found."""
+    result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return result.data[0]
+
+def supabase_append_to_array(trip_id: str, column: str, new_item: dict):
+    """Append an item to a JSON array column in the trips table."""
+    trip = supabase_get_trip(trip_id)
+    existing = trip.get(column) or []
+    existing.append(new_item)
+    supabase.table("trips").update({column: existing}).eq("id", trip_id).execute()
 
 # ----- Location Tracking -----
 
@@ -576,9 +611,7 @@ async def add_location(trip_id: str, location: LocationInput, background_tasks: 
     Add a location point to the trip.
     Triggers risk evaluation after adding location.
     """
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = supabase_get_trip(trip_id)
     
     if trip.get('status') != 'active':
         raise HTTPException(status_code=400, detail="Trip is not active")
@@ -594,10 +627,7 @@ async def add_location(trip_id: str, location: LocationInput, background_tasks: 
     loc_dict = loc_point.model_dump()
     loc_dict['timestamp'] = loc_dict['timestamp'].isoformat()
     
-    await db.trips.update_one(
-        {"id": trip_id},
-        {"$push": {"locations": loc_dict}}
-    )
+    supabase_append_to_array(trip_id, "locations", loc_dict)
     
     # Trigger risk evaluation in background
     background_tasks.add_task(check_and_alert_risk, trip_id)
@@ -616,9 +646,7 @@ async def cellular_triangulation(request: CellularTriangulationRequest):
     
     IMPORTANT: Cellular/IP triangulation is approximate. Never override good GPS data.
     """
-    trip = await db.trips.find_one({"id": request.trip_id})
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = supabase_get_trip(request.trip_id)
     
     if UNWIRED_LABS_API_KEY == 'demo_key':
         # Demo mode - return simulated location
@@ -641,10 +669,7 @@ async def cellular_triangulation(request: CellularTriangulationRequest):
         loc_dict = loc_point.model_dump()
         loc_dict['timestamp'] = loc_dict['timestamp'].isoformat()
         
-        await db.trips.update_one(
-            {"id": request.trip_id},
-            {"$push": {"locations": loc_dict}}
-        )
+        supabase_append_to_array(request.trip_id, "locations", loc_dict)
         
         return demo_response
     
@@ -694,10 +719,7 @@ async def cellular_triangulation(request: CellularTriangulationRequest):
             loc_dict = loc_point.model_dump()
             loc_dict['timestamp'] = loc_dict['timestamp'].isoformat()
             
-            await db.trips.update_one(
-                {"id": request.trip_id},
-                {"$push": {"locations": loc_dict}}
-            )
+            supabase_append_to_array(request.trip_id, "locations", loc_dict)
             
             method = "cell_tower" if request.mcc else "ip_geolocation"
             logger.info(f"Triangulation successful ({method}) for trip {request.trip_id}: lat={data['lat']}, lon={data['lon']}, accuracy={data.get('accuracy', 5000)}m")
@@ -742,9 +764,7 @@ async def add_motion_event(trip_id: str, motion: MotionInput, background_tasks: 
     
     IMPORTANT: Panic alone does NOT trigger alerts - it increases risk confidence.
     """
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = supabase_get_trip(trip_id)
     
     if trip.get('status') != 'active':
         raise HTTPException(status_code=400, detail="Trip is not active")
@@ -765,10 +785,7 @@ async def add_motion_event(trip_id: str, motion: MotionInput, background_tasks: 
     motion_dict = motion_event.model_dump()
     motion_dict['timestamp'] = motion_dict['timestamp'].isoformat()
     
-    await db.trips.update_one(
-        {"id": trip_id},
-        {"$push": {"motion_events": motion_dict}}
-    )
+    supabase_append_to_array(trip_id, "motion_events", motion_dict)
     
     if is_panic:
         logger.warning(f"Panic movement detected for trip {trip_id}")
@@ -788,9 +805,10 @@ async def check_and_alert_risk(trip_id: str):
     Background task to evaluate risk and trigger alerts if needed.
     """
     try:
-        trip = await db.trips.find_one({"id": trip_id})
-        if not trip or trip.get('status') != 'active':
+        result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+        if not result.data or result.data[0].get('status') != 'active':
             return
+        trip = result.data[0]
         
         risk_event = await evaluate_risk_rules(trip)
         
@@ -805,34 +823,28 @@ async def check_and_alert_risk(trip_id: str):
             risk_dict['sms_sent'] = alert_results['sms_sent']
             risk_dict['alert_sent'] = alert_results['push_sent'] or alert_results['sms_sent']
             
-            await db.trips.update_one(
-                {"id": trip_id},
-                {
-                    "$push": {"risk_events": risk_dict},
-                    "$set": {
-                        "status": "alert",
-                        "last_risk_check": datetime.utcnow().isoformat()
-                    }
-                }
-            )
+            supabase_append_to_array(trip_id, "risk_events", risk_dict)
+            supabase.table("trips").update({
+                "status": "alert",
+                "last_risk_check": datetime.utcnow().isoformat()
+            }).eq("id", trip_id).execute()
             
             logger.warning(f"RISK DETECTED for trip {trip_id}: {risk_event.rule_name}")
         else:
             # Update last check time
-            await db.trips.update_one(
-                {"id": trip_id},
-                {"$set": {"last_risk_check": datetime.utcnow().isoformat()}}
-            )
-            
+            supabase.table("trips").update({
+                "last_risk_check": datetime.utcnow().isoformat()
+            }).eq("id", trip_id).execute()
     except Exception as e:
         logger.error(f"Risk evaluation error: {str(e)}")
 
 @api_router.post("/trips/{trip_id}/evaluate-risk")
 async def manual_risk_evaluation(trip_id: str):
     """Manually trigger risk evaluation for a trip"""
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
+    result = supabase.table("trips").select("*").eq("id", trip_id).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Trip not found")
+    trip = result.data[0]
     
     risk_event = await evaluate_risk_rules(trip)
     
@@ -852,9 +864,7 @@ async def get_debug_info(trip_id: str):
     Debug endpoint for transparency - shows current tracking state.
     Useful for demo and judges.
     """
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = supabase_get_trip(trip_id)
     
     locations = trip.get('locations', [])
     motion_events = trip.get('motion_events', [])
@@ -891,17 +901,15 @@ async def get_debug_info(trip_id: str):
 @api_router.get("/trips/active/list")
 async def list_active_trips():
     """List all active trips"""
-    trips = await db.trips.find({"status": "active"}).to_list(100)
-    return [{"id": t['id'], "start_time": t['start_time'], "status": t['status']} for t in trips]
+    result = supabase.table("trips").select("id,start_time,status").eq("status", "active").limit(100).execute()
+    return result.data
 
 # ----- Test Alert Endpoint (for demo) -----
 
 @api_router.post("/trips/{trip_id}/test-alert")
 async def test_alert(trip_id: str):
     """Test alert system - sends test notification/SMS"""
-    trip = await db.trips.find_one({"id": trip_id})
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = supabase_get_trip(trip_id)
     
     test_risk = RiskEvent(
         rule_name="TEST_ALERT",
@@ -1467,7 +1475,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
