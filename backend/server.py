@@ -536,12 +536,22 @@ async def create_trip(trip_data: TripCreate):
     )
     
     trip_dict = trip.model_dump()
-    trip_dict['start_time'] = trip_dict['start_time'].isoformat()
+    # Ensure all datetime fields are ISO strings for Supabase
+    for key, value in trip_dict.items():
+        if isinstance(value, datetime):
+            trip_dict[key] = value.isoformat()
+    # Remove None values that Supabase may reject
+    trip_dict = {k: v for k, v in trip_dict.items() if v is not None}
     
-    supabase.table("trips").insert(trip_dict).execute()
-    logger.info(f"Trip created: {trip.id}")
+    try:
+        supabase.table("trips").insert(trip_dict).execute()
+        logger.info(f"Trip created: {trip.id}")
+    except Exception as e:
+        logger.error(f"Supabase insert error for trip: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create trip: {str(e)}")
     
     return trip
+
 
 @api_router.get("/trips/{trip_id}")
 async def get_trip(trip_id: str):

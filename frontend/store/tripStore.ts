@@ -25,6 +25,7 @@ export interface Trip {
 interface TripState {
   currentTrip: Trip | null;
   isTracking: boolean;
+  isBackgroundTrackingEnabled: boolean;
   locations: LocationPoint[];
   motionStatus: 'normal' | 'panic_detected';
   lastRiskRule: string | null;
@@ -43,6 +44,7 @@ interface TripState {
   setLastRiskRule: (rule: string | null) => void;
   setTrackingSource: (source: 'gps' | 'cellular_unwiredlabs') => void;
   setAccuracy: (accuracy: number) => void;
+  setBackgroundTracking: (enabled: boolean) => void;
   clearLocations: () => void;
   loadSavedGuardian: () => Promise<void>;
   getAllGuardianPhones: () => string[];
@@ -51,6 +53,7 @@ interface TripState {
 export const useTripStore = create<TripState>((set, get) => ({
   currentTrip: null,
   isTracking: false,
+  isBackgroundTrackingEnabled: false,
   locations: [],
   motionStatus: 'normal',
   lastRiskRule: null,
@@ -92,6 +95,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     set({
       currentTrip: null,
       isTracking: false,
+      isBackgroundTrackingEnabled: false,
       motionStatus: 'normal',
       lastRiskRule: null,
     });
@@ -117,6 +121,10 @@ export const useTripStore = create<TripState>((set, get) => ({
   
   setAccuracy: (accuracy: number) => {
     set({ accuracy });
+  },
+  
+  setBackgroundTracking: (enabled: boolean) => {
+    set({ isBackgroundTrackingEnabled: enabled });
   },
   
   clearLocations: () => {

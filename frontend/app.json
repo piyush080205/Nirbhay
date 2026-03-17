@@ -8,6 +8,7 @@
     "scheme": "nirbhay",
     "userInterfaceStyle": "automatic",
     "privacy": "unlisted",
+
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -35,13 +36,6 @@
         "ACTIVITY_RECOGNITION",
         "HIGH_SAMPLING_RATE_SENSORS",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "ACTIVITY_RECOGNITION",
-        "HIGH_SAMPLING_RATE_SENSORS",
-        "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION"
       ],
       "runtimeVersion": "1.0.0"
@@ -53,6 +47,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Continue safety tracking in background",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -67,6 +69,7 @@
       "typedRoutes": true
     },
     "extra": {
+      "API_URL": "https://nirbhay-r0h5.onrender.com",
       "router": {},
       "eas": {
         "projectId": "1b0650df-33c5-4722-b632-e8b272eaf2d4"

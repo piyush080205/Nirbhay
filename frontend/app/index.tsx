@@ -10,6 +10,8 @@ import {
   Platform,
   ActivityIndicator,
   Dimensions,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +19,11 @@ import { router } from 'expo-router';
 import { useTripStore } from '../store/tripStore';
 import MapView from '../components/MapView';
 import SafetyCheckModal from '../components/SafetyCheckModal';
+import {
+  startBackgroundTracking,
+  stopBackgroundTracking,
+  consumeBackgroundRisk,
+} from '../services/BackgroundMotionService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -29,6 +36,7 @@ export default function HomeScreen() {
   const {
     currentTrip,
     isTracking,
+    isBackgroundTrackingEnabled,
     locations,
     motionStatus,
     lastRiskRule,
@@ -45,6 +53,7 @@ export default function HomeScreen() {
     setTrackingSource,
     accuracy,
     setAccuracy,
+    setBackgroundTracking,
   } = useTripStore();
 
   const [loading, setLoading] = useState(false);
@@ -74,6 +83,25 @@ export default function HomeScreen() {
     };
     loadData();
   }, []);
+
+  // AppState listener: check for background risk flags when app returns to foreground
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState === 'active' && isTracking) {
+        // App came to foreground — check if background task flagged a risk
+        const bgRisk = await consumeBackgroundRisk();
+        if (bgRisk && !showSafetyCheck) {
+          console.log('[FG] Background risk detected:', bgRisk.rule);
+          setMotionStatus('panic_detected');
+          setLastRiskRule(bgRisk.rule);
+          setShowSafetyCheck(true);
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [isTracking, showSafetyCheck]);
 
   // Request permissions on mount (native only)
   useEffect(() => {
@@ -463,13 +491,33 @@ export default function HomeScreen() {
         }),
       });
       
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Backend error:', response.status, errorText);
+        throw new Error(`Server error ${response.status}: ${errorText}`);
+      }
+      
       const trip = await response.json();
       startTrip(trip);
       
       await startLocationTracking(trip.id);
       await startMotionTracking(trip.id);
+
+      // Start background tracking (Android foreground service)
+      const bgStarted = await startBackgroundTracking(trip.id);
+      setBackgroundTracking(bgStarted);
+      if (bgStarted) {
+        console.log('Background protection enabled');
+      } else {
+        console.warn('Background protection could not be started');
+      }
       
-      Alert.alert('Trip Started', 'Safety tracking is now active.');
+      Alert.alert(
+        'Trip Started',
+        bgStarted
+          ? 'Safety tracking is active — even if you leave the app.'
+          : 'Safety tracking is active (foreground only — background permission not granted).'
+      );
     } catch (error) {
       console.error('Failed to start trip:', error);
       Alert.alert('Error', 'Failed to start trip. Please try again.');
@@ -485,6 +533,10 @@ export default function HomeScreen() {
     setLoading(true);
     try {
       stopTracking();
+      
+      // Stop background tracking
+      await stopBackgroundTracking();
+      setBackgroundTracking(false);
       
       await fetch(`${API_URL}/api/trips/${currentTrip.id}/end`, {
         method: 'POST',
@@ -604,6 +656,23 @@ export default function HomeScreen() {
               <Text style={styles.accuracyLabel}>Accuracy: </Text>
               <Text style={styles.accuracyValue}>
                 {accuracy.toFixed(1)}m
+              </Text>
+            </View>
+          )}
+
+          {isTracking && (
+            <View style={[styles.accuracyRow, { borderTopWidth: 0, marginTop: 8, paddingTop: 0 }]}>
+              <Ionicons
+                name={isBackgroundTrackingEnabled ? 'shield-checkmark' : 'shield-outline'}
+                size={16}
+                color={isBackgroundTrackingEnabled ? '#2ed573' : '#888'}
+              />
+              <Text style={[styles.accuracyLabel, { marginLeft: 6 }]}>Background Protection: </Text>
+              <Text style={[
+                styles.accuracyValue,
+                { color: isBackgroundTrackingEnabled ? '#2ed573' : '#888' }
+              ]}>
+                {isBackgroundTrackingEnabled ? 'Active' : 'Inactive'}
               </Text>
             </View>
           )}
@@ -786,6 +855,16 @@ export default function HomeScreen() {
               <Text style={styles.infoTitle}>Auto Alerts</Text>
               <Text style={styles.infoText}>
                 Push notifications + SMS sent to guardian automatically
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Ionicons name="moon" size={24} color="#9b59b6" />
+            <View style={styles.infoContent}>
+              <Text style={styles.infoTitle}>Background Protection</Text>
+              <Text style={styles.infoText}>
+                Monitors your safety even when the app is minimized or phone is locked
               </Text>
             </View>
           </View>

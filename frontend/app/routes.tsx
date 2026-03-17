@@ -230,6 +230,7 @@ export default function SafeRoutesScreen() {
     const origin = { lat: currentLocation.lat, lng: currentLocation.lng };
     const dest = analysis.route_points[1];
     const safeSpots = analysis.nearby_safe_spots || [];
+    const safetyColor = getSafetyColor(analysis.safety_level);
     
     return `
       <!DOCTYPE html>
@@ -237,41 +238,142 @@ export default function SafeRoutesScreen() {
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
         <style>
-          body { margin: 0; padding: 0; }
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { background: #0f0f0f; }
           #map { width: 100%; height: 100vh; }
+          .leaflet-routing-container { display: none !important; }
+          .route-info {
+            position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 1000;
+            background: rgba(15,15,15,0.92); backdrop-filter: blur(10px);
+            border-radius: 12px; padding: 10px 14px;
+            display: flex; justify-content: space-around; align-items: center;
+            border: 1px solid rgba(255,255,255,0.1);
+          }
+          .route-info .item { text-align: center; }
+          .route-info .label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+          .route-info .value { color: #fff; font-size: 16px; font-weight: 700; margin-top: 2px; }
+          .route-info .divider { width: 1px; height: 30px; background: rgba(255,255,255,0.15); }
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(2.5); opacity: 0; }
+          }
+          .origin-pulse {
+            width: 24px; height: 24px; border-radius: 50%;
+            background: rgba(46,213,115,0.3); position: absolute;
+            animation: pulse 1.5s ease-out infinite;
+          }
         </style>
       </head>
       <body>
         <div id="map"></div>
+        <div class="route-info" id="routeInfo" style="display:none;">
+          <div class="item">
+            <div class="label">Distance</div>
+            <div class="value" id="distance">—</div>
+          </div>
+          <div class="divider"></div>
+          <div class="item">
+            <div class="label">Est. Time</div>
+            <div class="value" id="duration">—</div>
+          </div>
+          <div class="divider"></div>
+          <div class="item">
+            <div class="label">Safety</div>
+            <div class="value" id="safety" style="color:${safetyColor};">${analysis.overall_safety_score.toFixed(0)}%</div>
+          </div>
+        </div>
         <script>
-          var map = L.map('map', { zoomControl: false }).setView([${(origin.lat + dest.lat) / 2}, ${(origin.lng + dest.lng) / 2}], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          
-          // Origin marker (green)
-          L.circleMarker([${origin.lat}, ${origin.lng}], {
-            radius: 12, fillColor: '#2ed573', color: '#fff', weight: 3, fillOpacity: 1
-          }).addTo(map).bindPopup('Your Location');
-          
-          // Destination marker (red)
-          L.circleMarker([${dest.lat}, ${dest.lng}], {
-            radius: 12, fillColor: '#ff4757', color: '#fff', weight: 3, fillOpacity: 1
-          }).addTo(map).bindPopup('Destination');
-          
-          // Route line
-          L.polyline([[${origin.lat}, ${origin.lng}], [${dest.lat}, ${dest.lng}]], {
-            color: '${getSafetyColor(analysis.safety_level)}', weight: 4, opacity: 0.8
+          var map = L.map('map', { zoomControl: false }).setView(
+            [${(origin.lat + dest.lat) / 2}, ${(origin.lng + dest.lng) / 2}], 13
+          );
+
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OSM'
           }).addTo(map);
-          
-          // Safe spots
+
+          // Custom origin marker (green with pulse effect)
+          var originIcon = L.divIcon({
+            className: '',
+            html: '<div style="position:relative;width:24px;height:24px;">' +
+                  '<div class="origin-pulse"></div>' +
+                  '<div style="width:14px;height:14px;border-radius:50%;background:#2ed573;border:3px solid #fff;position:absolute;top:5px;left:5px;box-shadow:0 0 8px rgba(46,213,115,0.6);"></div>' +
+                  '</div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+          L.marker([${origin.lat}, ${origin.lng}], { icon: originIcon })
+            .addTo(map).bindPopup('<b>Your Location</b>');
+
+          // Custom destination marker (red pin)
+          var destIcon = L.divIcon({
+            className: '',
+            html: '<div style="position:relative;width:24px;height:34px;">' +
+                  '<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;background:#ff4757;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 0 8px rgba(255,71,87,0.6);"></div>' +
+                  '<div style="width:6px;height:6px;border-radius:50%;background:#fff;position:absolute;top:9px;left:9px;"></div>' +
+                  '</div>',
+            iconSize: [24, 34],
+            iconAnchor: [12, 34]
+          });
+          L.marker([${dest.lat}, ${dest.lng}], { icon: destIcon })
+            .addTo(map).bindPopup('<b>Destination</b>');
+
+          // Safe spots markers
           ${safeSpots.map(spot => `
             L.circleMarker([${spot.lat}, ${spot.lng}], {
-              radius: 8, fillColor: '#3498db', color: '#fff', weight: 2, fillOpacity: 0.8
-            }).addTo(map).bindPopup('${spot.name}');
+              radius: 7, fillColor: '#3498db', color: '#fff', weight: 2, fillOpacity: 0.85
+            }).addTo(map).bindPopup('<b>${spot.name.replace(/'/g, "\\'")}</b><br>${spot.distance_m}m away');
           `).join('')}
-          
-          map.fitBounds([[${origin.lat}, ${origin.lng}], [${dest.lat}, ${dest.lng}]], { padding: [50, 50] });
+
+          // Road-based routing with OSRM via Leaflet Routing Machine
+          var routingControl = L.Routing.control({
+            waypoints: [
+              L.latLng(${origin.lat}, ${origin.lng}),
+              L.latLng(${dest.lat}, ${dest.lng})
+            ],
+            router: L.Routing.osrmv1({
+              serviceUrl: 'https://router.project-osrm.org/route/v1'
+            }),
+            lineOptions: {
+              styles: [
+                { color: '#1a1a2e', weight: 8, opacity: 0.4 },
+                { color: '${safetyColor}', weight: 5, opacity: 0.9 }
+              ],
+              addWaypoints: false,
+              missingRouteTolerance: 0
+            },
+            addWaypoints: false,
+            draggableWaypoints: false,
+            fitSelectedRoutes: true,
+            show: false,
+            createMarker: function() { return null; }
+          }).addTo(map);
+
+          routingControl.on('routesfound', function(e) {
+            var route = e.routes[0];
+            var distKm = (route.summary.totalDistance / 1000).toFixed(1);
+            var durMin = Math.round(route.summary.totalTime / 60);
+
+            document.getElementById('distance').textContent = distKm + ' km';
+            document.getElementById('duration').textContent = durMin + ' min';
+            document.getElementById('routeInfo').style.display = 'flex';
+
+            // Fit map to route bounds with padding
+            var bounds = L.latLngBounds(route.coordinates);
+            map.fitBounds(bounds, { padding: [40, 40] });
+          });
+
+          routingControl.on('routingerror', function(e) {
+            // Fallback: draw straight line if routing fails
+            L.polyline(
+              [[${origin.lat}, ${origin.lng}], [${dest.lat}, ${dest.lng}]],
+              { color: '${safetyColor}', weight: 5, opacity: 0.8, dashArray: '10, 10' }
+            ).addTo(map);
+            map.fitBounds([[${origin.lat}, ${origin.lng}], [${dest.lat}, ${dest.lng}]], { padding: [40, 40] });
+          });
         </script>
       </body>
       </html>
@@ -629,7 +731,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   mapContainer: {
-    height: 200,
+    height: 300,
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 20,
