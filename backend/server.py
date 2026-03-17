@@ -490,20 +490,7 @@ def validate_invite(code: str):
     supabase.table("invites").update({"used": True}).eq("invite_code", code).execute()
     return {"status": "approved"}
 
-@api_router.post("/sensor")
-def sensor_data(payload: dict):
-    supabase.table("sensor_events").insert({
-        "sensor_data": payload
-    }).execute()
-    return {"status": "logged"}
 
-@api_router.post("/location")
-def location_event(lat: float, lng: float):
-    supabase.table("location_events").insert({
-        "latitude": lat,
-        "longitude": lng
-    }).execute()
-    return {"status": "location stored"}
 
 
 @api_router.get("/")
@@ -616,33 +603,59 @@ def supabase_append_to_array(trip_id: str, column: str, new_item: dict):
 # ----- Location Tracking -----
 
 @api_router.post("/trips/{trip_id}/location")
-async def add_location(trip_id: str, location: LocationInput, background_tasks: BackgroundTasks):
+async def add_location(trip_id: str, data: dict, background_tasks: BackgroundTasks):
     """
     Add a location point to the trip.
+    Accepts flexible JSON: {lat, lng} OR {latitude, longitude}.
+    Writes to location_events table AND trips.locations array.
     Triggers risk evaluation after adding location.
     """
-    trip = supabase_get_trip(trip_id)
-    
-    if trip.get('status') != 'active':
-        raise HTTPException(status_code=400, detail="Trip is not active")
-    
-    loc_point = LocationPoint(
-        latitude=location.latitude,
-        longitude=location.longitude,
-        accuracy=location.accuracy,
-        source=location.source,
-        accuracy_radius=location.accuracy_radius
-    )
-    
-    loc_dict = loc_point.model_dump()
-    loc_dict['timestamp'] = loc_dict['timestamp'].isoformat()
-    
-    supabase_append_to_array(trip_id, "locations", loc_dict)
-    
-    # Trigger risk evaluation in background
-    background_tasks.add_task(check_and_alert_risk, trip_id)
-    
-    return {"message": "Location added", "location_id": loc_point.id}
+    try:
+        print("==== LOCATION RECEIVED ====")
+        print(data)
+
+        # Flexible key resolution: accept lat/lng or latitude/longitude
+        lat = data.get("lat") or data.get("latitude")
+        lng = data.get("lng") or data.get("longitude")
+        accuracy = data.get("accuracy", 0.0)
+        source = data.get("source", "gps")
+        accuracy_radius = data.get("accuracy_radius")
+
+        if lat is None or lng is None:
+            return {"error": "Missing lat/lng or latitude/longitude in request body"}
+
+        # Insert into location_events table
+        loc_response = supabase.table("location_events").insert({
+            "user_id": trip_id,
+            "latitude": float(lat),
+            "longitude": float(lng),
+        }).execute()
+        print("Supabase location_events response:", loc_response)
+
+        # Also append to trips.locations array for risk evaluation
+        try:
+            trip = supabase_get_trip(trip_id)
+            if trip.get('status') == 'active':
+                loc_point = LocationPoint(
+                    latitude=float(lat),
+                    longitude=float(lng),
+                    accuracy=float(accuracy),
+                    source=source if source in ["gps", "cellular_unwiredlabs"] else "gps",
+                    accuracy_radius=float(accuracy_radius) if accuracy_radius is not None else None,
+                )
+                loc_dict = loc_point.model_dump()
+                loc_dict['timestamp'] = loc_dict['timestamp'].isoformat()
+                supabase_append_to_array(trip_id, "locations", loc_dict)
+                # Trigger risk evaluation in background
+                background_tasks.add_task(check_and_alert_risk, trip_id)
+        except Exception as trip_err:
+            logger.warning(f"Could not update trip locations array: {trip_err}")
+
+        return {"status": "stored"}
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return {"error": str(e)}
 
 @api_router.post("/cellular-triangulation")
 async def cellular_triangulation(request: CellularTriangulationRequest):
@@ -762,51 +775,69 @@ async def cellular_triangulation(request: CellularTriangulationRequest):
 # ----- Motion Tracking -----
 
 @api_router.post("/trips/{trip_id}/motion")
-async def add_motion_event(trip_id: str, motion: MotionInput, background_tasks: BackgroundTasks):
+async def add_motion_event(trip_id: str, data: dict, background_tasks: BackgroundTasks):
     """
     Add a motion sensor event.
+    Accepts flexible JSON: {x, y, z} OR {accel_variance, gyro_variance}.
+    Writes to sensor_events table AND trips.motion_events array.
     Evaluates if motion indicates panic (rule-based, no ML).
-    
-    Panic Detection Logic:
-    - High acceleration variance indicates sudden jerky movements
-    - High gyroscope variance indicates erratic rotation
-    - Both combined suggest struggle/panic
-    
-    IMPORTANT: Panic alone does NOT trigger alerts - it increases risk confidence.
     """
-    trip = supabase_get_trip(trip_id)
-    
-    if trip.get('status') != 'active':
-        raise HTTPException(status_code=400, detail="Trip is not active")
-    
-    # Determine if this is panic movement
-    # Rule-based: high variance in both accel and gyro suggests struggle
-    is_panic = (
-        motion.accel_variance > PANIC_ACCEL_THRESHOLD and 
-        motion.gyro_variance > PANIC_GYRO_THRESHOLD
-    )
-    
-    motion_event = MotionEvent(
-        accel_variance=motion.accel_variance,
-        gyro_variance=motion.gyro_variance,
-        is_panic=is_panic
-    )
-    
-    motion_dict = motion_event.model_dump()
-    motion_dict['timestamp'] = motion_dict['timestamp'].isoformat()
-    
-    supabase_append_to_array(trip_id, "motion_events", motion_dict)
-    
-    if is_panic:
-        logger.warning(f"Panic movement detected for trip {trip_id}")
-        # Trigger risk evaluation in background
-        background_tasks.add_task(check_and_alert_risk, trip_id)
-    
-    return {
-        "message": "Motion event recorded",
-        "motion_id": motion_event.id,
-        "is_panic": is_panic
-    }
+    try:
+        print("==== MOTION RECEIVED ====")
+        print(data)
+
+        # Insert raw data into sensor_events table
+        sensor_response = supabase.table("sensor_events").insert({
+            "user_id": trip_id,
+            "sensor_data": data,
+        }).execute()
+        print("Supabase sensor_events response:", sensor_response)
+
+        # Compute variance values for risk detection
+        # Support both {x, y, z} and {accel_variance, gyro_variance} formats
+        if "accel_variance" in data and "gyro_variance" in data:
+            accel_variance = float(data["accel_variance"])
+            gyro_variance = float(data["gyro_variance"])
+        elif "x" in data and "y" in data and "z" in data:
+            # Treat magnitude of {x, y, z} as a proxy variance
+            magnitude = (float(data["x"])**2 + float(data["y"])**2 + float(data["z"])**2) ** 0.5
+            accel_variance = magnitude
+            gyro_variance = 0.0  # No gyro data in x/y/z format; default to 0
+        else:
+            # Unknown format — still stored in sensor_events, skip risk calc
+            logger.warning(f"Unknown motion data format for trip {trip_id}: {data}")
+            return {"status": "stored", "note": "Unknown format, skipped risk evaluation"}
+
+        # Determine if this is panic movement (rule-based)
+        is_panic = (
+            accel_variance > PANIC_ACCEL_THRESHOLD and
+            gyro_variance > PANIC_GYRO_THRESHOLD
+        )
+
+        # Also append to trips.motion_events array for risk evaluation
+        try:
+            trip = supabase_get_trip(trip_id)
+            if trip.get('status') == 'active':
+                motion_event = MotionEvent(
+                    accel_variance=accel_variance,
+                    gyro_variance=gyro_variance,
+                    is_panic=is_panic,
+                )
+                motion_dict = motion_event.model_dump()
+                motion_dict['timestamp'] = motion_dict['timestamp'].isoformat()
+                supabase_append_to_array(trip_id, "motion_events", motion_dict)
+
+                if is_panic:
+                    logger.warning(f"Panic movement detected for trip {trip_id}")
+                    background_tasks.add_task(check_and_alert_risk, trip_id)
+        except Exception as trip_err:
+            logger.warning(f"Could not update trip motion_events array: {trip_err}")
+
+        return {"status": "stored"}
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return {"error": str(e)}
 
 # ----- Risk Evaluation -----
 

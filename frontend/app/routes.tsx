@@ -16,7 +16,7 @@ import { router } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { API_URL } from '../services/api';
 
 interface SafetyFactor {
   name: string;

@@ -24,10 +24,11 @@ import {
   stopBackgroundTracking,
   consumeBackgroundRisk,
 } from '../services/BackgroundMotionService';
+import { API_URL, sendLocation, sendMotionVariance } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+
 
 // Web fallback for demo purposes
 const isWeb = Platform.OS === 'web';
@@ -180,17 +181,11 @@ export default function HomeScreen() {
     
     // Send to backend
     try {
-      await fetch(`${API_URL}/api/trips/${tripId}/location`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trip_id: tripId,
-          latitude: newLat,
-          longitude: newLng,
-          accuracy: fallbackAccuracy,
-          source: 'cellular_unwiredlabs',
-          accuracy_radius: fallbackAccuracy,
-        }),
+      await sendLocation(tripId, {
+        latitude: newLat,
+        longitude: newLng,
+        accuracy: fallbackAccuracy,
+        source: 'cellular_unwiredlabs',
       });
       return true;
     } catch (error) {
@@ -218,17 +213,8 @@ export default function HomeScreen() {
         setTrackingSource('gps');
         setAccuracy(15);
         
-        fetch(`${API_URL}/api/trips/${tripId}/location`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trip_id: tripId,
-            latitude: lat,
-            longitude: lng,
-            accuracy: 15,
-            source: 'gps',
-          }),
-        }).catch(err => console.error('Failed to send location:', err));
+        sendLocation(tripId, { latitude: lat, longitude: lng, accuracy: 15, source: 'gps' })
+          .catch(err => console.error('Failed to send web demo location:', err));
       }, 5000);
       
       locationSubscription.current = { remove: () => clearInterval(demoInterval) };
@@ -265,16 +251,11 @@ export default function HomeScreen() {
           });
           
           try {
-            await fetch(`${API_URL}/api/trips/${tripId}/location`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                trip_id: tripId,
-                latitude,
-                longitude,
-                accuracy: gpsAccuracy || 0,
-                source,
-              }),
+            await sendLocation(tripId, {
+              latitude,
+              longitude,
+              accuracy: gpsAccuracy || 0,
+              source,
             });
           } catch (err) {
             console.error('Failed to send location:', err);
@@ -317,17 +298,9 @@ export default function HomeScreen() {
         setMotionStatus('normal');
         
         try {
-          await fetch(`${API_URL}/api/trips/${tripId}/motion`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              trip_id: tripId,
-              accel_variance: accelVariance,
-              gyro_variance: gyroVariance,
-            }),
-          });
+          await sendMotionVariance(tripId, accelVariance, gyroVariance);
         } catch (err) {
-          console.error('Failed to send motion data:', err);
+          console.error('Failed to send web demo motion data:', err);
         }
       }, VARIANCE_CHECK_INTERVAL);
       return;
@@ -383,15 +356,7 @@ export default function HomeScreen() {
         
         // Still send motion data to backend for logging
         try {
-          await fetch(`${API_URL}/api/trips/${tripId}/motion`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              trip_id: tripId,
-              accel_variance: accelVariance,
-              gyro_variance: gyroVariance,
-            }),
-          });
+          await sendMotionVariance(tripId, accelVariance, gyroVariance);
         } catch (err) {
           console.error('Failed to send motion data:', err);
         }

@@ -2,6 +2,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, AppState } from 'react-native';
+import { API_URL, sendLocation, sendMotionVariance } from './api';
 
 // ============================================================
 // Constants
@@ -9,7 +10,7 @@ import { Platform, AppState } from 'react-native';
 
 export const BACKGROUND_LOCATION_TASK = 'NIRBHAY_BACKGROUND_LOCATION';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+
 
 // Speed-based panic detection thresholds
 const PANIC_SPEED_THRESHOLD = 22; // m/s (~80 km/h) - unusually fast for walking/auto
@@ -136,21 +137,7 @@ async function sendLocationToBackend(
   accuracy: number,
   source: string = 'gps'
 ): Promise<void> {
-  try {
-    await fetch(`${API_URL}/api/trips/${tripId}/location`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        trip_id: tripId,
-        latitude: lat,
-        longitude: lng,
-        accuracy,
-        source,
-      }),
-    });
-  } catch (err) {
-    console.error('[BG] Failed to send location:', err);
-  }
+  await sendLocation(tripId, { latitude: lat, longitude: lng, accuracy, source });
 }
 
 async function sendMotionEventToBackend(
@@ -158,19 +145,7 @@ async function sendMotionEventToBackend(
   accelVariance: number,
   gyroVariance: number
 ): Promise<void> {
-  try {
-    await fetch(`${API_URL}/api/trips/${tripId}/motion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        trip_id: tripId,
-        accel_variance: accelVariance,
-        gyro_variance: gyroVariance,
-      }),
-    });
-  } catch (err) {
-    console.error('[BG] Failed to send motion event:', err);
-  }
+  await sendMotionVariance(tripId, accelVariance, gyroVariance);
 }
 
 async function triggerBackendAlert(tripId: string): Promise<void> {
