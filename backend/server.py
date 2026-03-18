@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Body
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from supabase_client import supabase
@@ -480,14 +480,30 @@ async def trigger_alerts(trip: dict, risk_event: RiskEvent) -> dict:
 # ===========================================
 
 @api_router.post("/validate-invite")
-def validate_invite(code: str):
+def validate_invite(data: dict = Body(...)):
+    code = data.get("code")
+
+    print("Received invite code:", code)
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Code is required")
+
     result = supabase.table("invites").select("*").eq("invite_code", code).execute()
-    if len(result.data) == 0:
-        raise HTTPException(status_code=403, detail="Invalid invite")
+
+    print("DB result:", result.data)
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Invalid invite")
+
     invite = result.data[0]
-    if invite["used"]:
-        raise HTTPException(status_code=403, detail="Invite already used")
+
+    # TEMP: disable strict blocking for beta testing
+    # if invite["used"]:
+    #     raise HTTPException(status_code=403, detail="Invite already used")
+
+    # Mark as used
     supabase.table("invites").update({"used": True}).eq("invite_code", code).execute()
+
     return {"status": "approved"}
 
 

@@ -64,12 +64,12 @@ export default function SafeRoutesScreen() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  
+
   const [destinationText, setDestinationText] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   const [searching, setSearching] = useState(false);
-  
+
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<RouteAnalysis | null>(null);
 
@@ -81,7 +81,7 @@ export default function SafeRoutesScreen() {
   const getCurrentLocation = async () => {
     setLocationLoading(true);
     setLocationError(null);
-    
+
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -93,7 +93,7 @@ export default function SafeRoutesScreen() {
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
+
       setCurrentLocation({
         lat: location.coords.latitude,
         lng: location.coords.longitude,
@@ -226,12 +226,12 @@ export default function SafeRoutesScreen() {
 
   const renderMapHtml = () => {
     if (!analysis || !currentLocation) return '';
-    
+
     const origin = { lat: currentLocation.lat, lng: currentLocation.lng };
     const dest = analysis.route_points[1];
     const safeSpots = analysis.nearby_safe_spots || [];
     const safetyColor = getSafetyColor(analysis.safety_level);
-    
+
     return `
       <!DOCTYPE html>
       <html>
@@ -402,7 +402,7 @@ export default function SafeRoutesScreen() {
               <Ionicons name="navigate" size={20} color="#2ed573" />
               <Text style={styles.labelText}>From (Current Location)</Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.locationBox}
               onPress={getCurrentLocation}
               disabled={locationLoading}
@@ -455,7 +455,7 @@ export default function SafeRoutesScreen() {
                 <Ionicons name="checkmark-circle" size={20} color="#2ed573" style={styles.selectedIcon} />
               )}
             </View>
-            
+
             {/* Search Results Dropdown */}
             {searchResults.length > 0 && (
               <View style={styles.searchResults}>
@@ -534,7 +534,7 @@ export default function SafeRoutesScreen() {
                     </Text>
                   </View>
                   <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { 
+                    <View style={[styles.progressFill, {
                       width: `${factor.score}%`,
                       backgroundColor: getScoreColor(factor.score)
                     }]} />

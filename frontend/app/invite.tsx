@@ -33,10 +33,15 @@ export default function InviteScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/validate-invite?code=${encodeURIComponent(trimmed)}`,
-        { method: 'POST' }
-      );
+      console.log("Sending invite code:", trimmed);
+
+      const response = await fetch(`${API_URL}/api/validate-invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: trimmed }),
+      });
 
       if (response.ok) {
         const data = await response.json();
