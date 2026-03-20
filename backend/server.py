@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict, Any
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 import math
 import base64
@@ -247,8 +247,23 @@ NIGHT_END_HOUR = 5     # 5 AM
 # Helper Functions
 # ===========================================
 
+# ── IST timezone constant ──
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def now_ist() -> datetime:
+    """Return the current time in IST (Asia/Kolkata = UTC+05:30)."""
+    return datetime.now(tz=IST)
+
 def is_night_time(timestamp: datetime) -> bool:
-    """Check if given time is during night hours"""
+    """Check if given time is during night hours (IST).
+    Works for both naive UTC datetimes (converted to IST) and
+    timezone-aware datetimes.
+    """
+    if timestamp.tzinfo is None:
+        # Assume UTC – convert to IST
+        timestamp = timestamp.replace(tzinfo=timezone.utc).astimezone(IST)
+    else:
+        timestamp = timestamp.astimezone(IST)
     hour = timestamp.hour
     return hour >= NIGHT_START_HOUR or hour < NIGHT_END_HOUR
 
@@ -281,7 +296,7 @@ async def evaluate_risk_rules(trip: dict) -> Optional[RiskEvent]:
     confidence = 0.0
     
     # Get recent data (last 1 minute for faster response)
-    now = datetime.utcnow()
+    now = now_ist()  # Use IST for accurate night-time detection in India
     one_min_ago = now - timedelta(seconds=60)
     thirty_sec_ago = now - timedelta(seconds=30)
     
@@ -985,6 +1000,86 @@ async def test_alert(trip_id: str):
     }
 
 # ===========================================
+# Delhi Metro Station Dataset (from EMPI Reference Table)
+# Source: Delhi Metro Yellow Line, Blue Line, Airport Express, Magenta Line
+# Operating hours: ~05:30 – 23:00 IST (first / last metro varies by station)
+# ===========================================
+
+DELHI_METRO_STATIONS = [
+    # id, name, lat, lng, lines, nearest_to_empi_km, purpose, travel_time_from_empi_min
+    {"id": "M01", "name": "Chhattarpur Metro Station",    "lat": 28.4981, "lng": 77.1780,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 1.0,  "travel_min": 10,
+     "purpose": "Nearest metro",       "type": "nearest_metro"},
+    {"id": "M02", "name": "Qutub Minar Metro Station",   "lat": 28.5026, "lng": 77.1856,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 2.5,  "travel_min": 10,
+     "purpose": "Tourist place",       "type": "yellow_line"},
+    {"id": "M03", "name": "Saket Metro Station",         "lat": 28.5218, "lng": 77.2049,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 5.0,  "travel_min": 15,
+     "purpose": "Shopping (Select Citywalk)", "type": "yellow_line"},
+    {"id": "M04", "name": "Malviya Nagar Metro Station", "lat": 28.5280, "lng": 77.2087,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 5.0,  "travel_min": 15,
+     "purpose": "DLF Avenue Saket",    "type": "yellow_line"},
+    {"id": "M05", "name": "AIIMS Metro Station",         "lat": 28.5672, "lng": 77.2093,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 10.0, "travel_min": 20,
+     "purpose": "Hospital",            "type": "yellow_line"},
+    {"id": "M06", "name": "Hauz Khas Metro Station",    "lat": 28.5429, "lng": 77.2059,
+     "lines": ["Yellow Line", "Magenta Line"], "dist_from_empi_km": 8.0, "travel_min": 20,
+     "purpose": "Food/Nightlife",      "type": "interchange"},
+    {"id": "M07", "name": "Rajiv Chowk Metro Station",  "lat": 28.6330, "lng": 77.2194,
+     "lines": ["Yellow Line", "Blue Line"],   "dist_from_empi_km": 15.0, "travel_min": 30,
+     "purpose": "City center",         "type": "interchange"},
+    {"id": "M08", "name": "New Delhi Metro Station",    "lat": 28.6423, "lng": 77.2200,
+     "lines": ["Yellow Line", "Airport Express"], "dist_from_empi_km": 16.0, "travel_min": 35,
+     "purpose": "Transport hub / NDLS","type": "interchange"},
+    {"id": "M09", "name": "Sikanderpur Metro Station",  "lat": 28.4803, "lng": 77.0925,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 20.0, "travel_min": 35,
+     "purpose": "Cyber Hub Gurgaon",   "type": "yellow_line"},
+    {"id": "M10", "name": "IGI Airport Metro Station",  "lat": 28.5562, "lng": 77.0999,
+     "lines": ["Airport Express"],      "dist_from_empi_km": 18.0, "travel_min": 45,
+     "purpose": "Indira Gandhi International Airport", "type": "airport_express"},
+    {"id": "M11", "name": "Noida Sector 62 Metro Station","lat": 28.6271, "lng": 77.3690,
+     "lines": ["Blue Line"],            "dist_from_empi_km": 30.0, "travel_min": 60,
+     "purpose": "IT hub",              "type": "blue_line"},
+    {"id": "M12", "name": "Dwarka Sector 21 Metro Station","lat": 28.5524, "lng": 77.0588,
+     "lines": ["Blue Line"],            "dist_from_empi_km": 28.0, "travel_min": 55,
+     "purpose": "Residential Dwarka", "type": "blue_line"},
+    {"id": "M13", "name": "Green Park Metro Station",   "lat": 28.5603, "lng": 77.2073,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 9.0,  "travel_min": 20,
+     "purpose": "Shopping",            "type": "yellow_line"},
+    {"id": "M14", "name": "Sultanpur Metro Station",    "lat": 28.4862, "lng": 77.1518,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 2.0,  "travel_min": 5,
+     "purpose": "Nearby metro",        "type": "nearest_metro"},
+    {"id": "M15", "name": "Mehrauli Arch. Park (nearest: Qutub Minar)",
+     "lat": 28.5025, "lng": 77.1856,
+     "lines": ["Yellow Line"],          "dist_from_empi_km": 3.0,  "travel_min": 10,
+     "purpose": "Tourist",             "type": "yellow_line"},
+]
+
+# DMRC first/last metro (approximate, IST)
+DMRC_FIRST_METRO_HOUR = 5   # 05:30 IST
+DMRC_FIRST_METRO_MINUTE = 30
+DMRC_LAST_METRO_HOUR = 23   # 23:00 IST
+DMRC_LAST_METRO_MINUTE = 0
+
+def is_metro_operational(ist_hour: int, ist_minute: int = 0) -> bool:
+    """Return True if Delhi Metro is running at the given IST time."""
+    total_minutes = ist_hour * 60 + ist_minute
+    first = DMRC_FIRST_METRO_HOUR * 60 + DMRC_FIRST_METRO_MINUTE  # 330
+    last  = DMRC_LAST_METRO_HOUR  * 60 + DMRC_LAST_METRO_MINUTE   # 1380
+    return first <= total_minutes <= last
+
+def find_nearest_metro(lat: float, lng: float) -> Optional[dict]:
+    """Return the metro station nearest to the given lat/lng."""
+    best = None
+    best_dist = float('inf')
+    for station in DELHI_METRO_STATIONS:
+        d = calculate_distance(lat, lng, station['lat'], station['lng'])
+        if d < best_dist:
+            best_dist = d
+            best = {**station, '_dist_m': round(d)}
+    return best
+
+# ===========================================
 # Feature 1: Safe Route & Transport Suggestions
 # ===========================================
 
@@ -1185,13 +1280,19 @@ async def analyze_route_safety(request: RouteRequest):
     if dest_lat is None or dest_lng is None:
         raise HTTPException(status_code=400, detail="Destination coordinates or place name required")
     
-    # Determine travel time
+    # Determine travel time — always work in IST so time-of-day scoring is correct
     if request.travel_time:
-        travel_datetime = datetime.fromisoformat(request.travel_time.replace('Z', ''))
+        parsed = datetime.fromisoformat(request.travel_time.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            # Assume UTC if no timezone info provided
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        travel_datetime = parsed.astimezone(IST)
     else:
-        travel_datetime = datetime.utcnow()
-    
+        travel_datetime = now_ist()  # Current time in IST
+
     hour = travel_datetime.hour
+    minute = travel_datetime.minute
+    logger.info(f"Route analysis at IST time: {travel_datetime.strftime('%H:%M %Z')} (hour={hour})")
     
     # Calculate safety factors
     time_score, time_desc = calculate_time_safety_score(hour)
@@ -1280,30 +1381,66 @@ async def analyze_route_safety(request: RouteRequest):
             icon="walk"
         ))
     
-    # Metro/Public transit
-    if route_distance > 1000:
-        metro_time = int(route_distance / 500) + 10  # Including wait time
-        metro_safety = min(95, overall_score + 15)  # Metro is generally safer
+    # ── Delhi Metro (DMRC data) ──────────────────────────────────────────
+    # Find the nearest metro station to the origin
+    origin_metro = find_nearest_metro(request.origin_lat, request.origin_lng)
+    dest_metro   = find_nearest_metro(dest_lat, dest_lng)
+    metro_operational = is_metro_operational(hour, minute)
+
+    if route_distance > 800 and origin_metro:  # Metro viable for >800 m
+        origin_metro_dist_m = origin_metro['_dist_m']
+        # Travel time = walk to station (5 km/h) + DMRC travel estimate + wait
+        walk_to_station_min = max(2, round(origin_metro_dist_m / 83))  # ~5 km/h
+        dmrc_travel_min = origin_metro.get('travel_min', int(route_distance / 500))
+        metro_time = walk_to_station_min + dmrc_travel_min + 5  # +5 min wait
+
+        lines_str = " + ".join(origin_metro.get('lines', ['Delhi Metro']))
+
+        if metro_operational:
+            metro_safety = min(97, overall_score + 18)  # DMRC CCTV, staff, well-lit
+            if origin_metro_dist_m < 500:
+                metro_rec = (
+                    f"{origin_metro['name']} ({lines_str}) is {origin_metro_dist_m}m away. "
+                    f"DMRC runs until 23:00 — highly recommended."
+                )
+            else:
+                metro_rec = (
+                    f"Nearest station: {origin_metro['name']} ({lines_str}), "
+                    f"{origin_metro_dist_m}m walk. Safe, monitored transit."
+                )
+        else:
+            # Metro not running (before 05:30 or after 23:00)
+            metro_safety = max(40, overall_score - 10)
+            metro_rec = (
+                f"DMRC not operational now (runs 05:30–23:00). "
+                f"Nearest station {origin_metro['name']} opens at 05:30 IST."
+            )
+
         transport_modes.append(TransportMode(
             mode="metro",
-            safety_score=metro_safety,
+            safety_score=round(metro_safety, 1),
             estimated_time=metro_time,
-            recommendation="Recommended - safe and monitored",
+            recommendation=metro_rec,
             icon="train"
         ))
-    
-    # Bus
+
+    # ── DTC Bus ─────────────────────────────────────────────────────────
     bus_time = int(route_distance / 300) + 15
     bus_safety = overall_score + 5
+    if hour >= 21 or hour < 6:
+        bus_rec = "Night service limited — verify DTC timetable before travel"
+        bus_safety -= 10
+    else:
+        bus_rec = "DTC buses available — prefer crowded routes with good lighting"
     transport_modes.append(TransportMode(
         mode="bus",
-        safety_score=min(90, bus_safety),
+        safety_score=min(90, max(30, bus_safety)),
         estimated_time=bus_time,
-        recommendation="Good option with regular stops",
+        recommendation=bus_rec,
         icon="bus"
     ))
-    
-    # Auto/Rickshaw
+
+    # ── Auto / E-Rickshaw ────────────────────────────────────────────────
     auto_time = int(route_distance / 400) + 5
     auto_safety = overall_score - 5 if hour >= 22 or hour < 6 else overall_score
     transport_modes.append(TransportMode(
@@ -1313,18 +1450,18 @@ async def analyze_route_safety(request: RouteRequest):
         recommendation="Share ride details with guardian" if hour >= 21 else "Convenient for medium distances",
         icon="car"
     ))
-    
-    # Cab (app-based)
+
+    # ── App-based Cab ────────────────────────────────────────────────────
     cab_time = int(route_distance / 500) + 8
-    cab_safety = overall_score + 10  # App-based cabs have tracking
+    cab_safety = overall_score + 10  # Tracking, registered driver
     transport_modes.append(TransportMode(
         mode="cab",
         safety_score=min(95, cab_safety),
         estimated_time=cab_time,
-        recommendation="Best for night travel - share trip with contacts",
+        recommendation="Best for night travel — share live trip with emergency contacts",
         icon="car-sport"
     ))
-    
+
     # Sort by safety score
     transport_modes.sort(key=lambda x: x.safety_score, reverse=True)
     
@@ -1357,6 +1494,10 @@ async def analyze_route_safety(request: RouteRequest):
     if hour >= 21 or hour < 6:
         recommendations.append("Avoid isolated areas and shortcuts")
         recommendations.append("Keep your phone charged and accessible")
+    if not is_metro_operational(hour, minute):
+        recommendations.append("Delhi Metro is not running — opt for verified app-based cabs")
+    else:
+        recommendations.append("Delhi Metro (DMRC) is operational — a safe and monitored option")
     
     return RouteResponse(
         overall_safety_score=round(overall_score, 1),
